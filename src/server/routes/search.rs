@@ -80,8 +80,8 @@ pub async fn search(
             // Closure wrapping the results function capturing local references
             let get_results = |page| results(&config, &cache, query, page, &search_settings);
 
-            // .max(1) makes sure that the page >= 0.
-            let page = params.page.unwrap_or(1).max(1) - 1;
+            // .max(0) makes sure that the page >= 0.
+            let page = params.page.unwrap_or(0).max(0);
             let previous_page = page.saturating_sub(1);
             let next_page = page + 1;
 
