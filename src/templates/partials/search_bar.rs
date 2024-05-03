@@ -23,6 +23,7 @@ pub fn search_bar(
     engine_errors_info: &[EngineErrorInfo],
     safe_search_level: u8,
     query: &str,
+    search_stats: f32,
 ) -> Markup {
     html!(
         .search_area{
@@ -70,6 +71,9 @@ pub fn search_bar(
                    }
                }
                (PreEscaped("</select>"))
+            }
+            .search_stats{
+                p{(format!("Duration: {:.2} seconds", search_stats))}
             }
         }
     )

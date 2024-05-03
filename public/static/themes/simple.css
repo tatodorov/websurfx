@@ -145,6 +145,11 @@ button {
   background-color: var(--color-one);
 }
 
+.search_area .search_stats {
+  font-size: 1.5rem;
+  color: var(--foreground-color);
+}
+
 .result_not_found {
   display: flex;
   flex-direction: column;

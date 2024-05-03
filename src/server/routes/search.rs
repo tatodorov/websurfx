@@ -14,6 +14,7 @@ use crate::{
 use actix_web::{get, http::header::ContentType, web, HttpRequest, HttpResponse};
 use regex::Regex;
 use std::borrow::Cow;
+use std::time::Instant;
 use tokio::{
     fs::File,
     io::{AsyncBufReadExt, BufReader},
@@ -40,6 +41,7 @@ pub async fn search(
     config: web::Data<&'static Config>,
     cache: web::Data<&'static SharedCache>,
 ) -> Result<HttpResponse, Box<dyn std::error::Error>> {
+    let search_start_time = Instant::now();
     use std::sync::Arc;
     let params = web::Query::<SearchParams>::from_query(req.query_string())?;
     match &params.q {
@@ -125,6 +127,8 @@ pub async fn search(
                 tokio::spawn(async move { cache.cache_results(&results_list, &cache_keys).await });
             }
 
+            let search_duration = search_start_time.elapsed().as_secs_f32();
+
             Ok(HttpResponse::Ok().content_type(ContentType::html()).body(
                 crate::templates::views::search::search(
                     &config.style.colorscheme,
@@ -132,6 +136,7 @@ pub async fn search(
                     &config.style.animation,
                     query,
                     &results.0,
+                    search_duration,
                 )
                 .0,
             ))

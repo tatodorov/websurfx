@@ -25,11 +25,12 @@ pub fn search(
     animation: &Option<String>,
     query: &str,
     search_results: &SearchResults,
+    search_stats: f32,
 ) -> Markup {
     html!(
         (header(colorscheme, theme, animation))
         main class="results"{
-           (search_bar(&search_results.engine_errors_info, search_results.safe_search_level, query))
+           (search_bar(&search_results.engine_errors_info, search_results.safe_search_level, query, search_stats))
            .results_aggregated{
               @if !search_results.results.is_empty() {
                   @for result in search_results.results.iter(){
