@@ -13,12 +13,13 @@ use crate::{
 };
 use actix_web::{get, http::header::ContentType, web, HttpRequest, HttpResponse};
 use regex::Regex;
-use std::borrow::Cow;
 use std::time::Instant;
+use std::{borrow::Cow, collections::HashMap};
 use tokio::{
     fs::File,
     io::{AsyncBufReadExt, BufReader},
     join,
+    time::Duration,
 };
 
 /// Handles the route of search page of the `websurfx` meta search engine website and it takes
@@ -85,47 +86,42 @@ pub async fn search(
             let previous_page = page.saturating_sub(1);
             let next_page = page + 1;
 
-            let mut results = Arc::new((SearchResults::default(), String::default()));
+            let results: Arc<(SearchResults, String)>;
+            let cached_results: HashMap<String, SearchResults>;
             if page != previous_page {
-                let (previous_results, current_results, next_results) = join!(
-                    get_results(previous_page),
-                    get_results(page),
-                    get_results(next_page)
-                );
-                let (parsed_previous_results, parsed_next_results) =
-                    (previous_results?, next_results?);
-
-                let (cache_keys, results_list) = (
-                    [
-                        parsed_previous_results.1,
-                        results.1.clone(),
-                        parsed_next_results.1,
-                    ],
-                    [
-                        parsed_previous_results.0,
-                        results.0.clone(),
-                        parsed_next_results.0,
-                    ],
-                );
-
+                let (previous_results, current_results) =
+                    join!(get_results(previous_page), get_results(page),);
+                let parsed_previous_results = previous_results?;
                 results = Arc::new(current_results?);
-
-                tokio::spawn(async move { cache.cache_results(&results_list, &cache_keys).await });
+                cached_results = [
+                    (parsed_previous_results.1, parsed_previous_results.0),
+                    (results.1.clone(), results.0.clone()),
+                ]
+                .iter()
+                .cloned()
+                .collect();
             } else {
-                let (current_results, next_results) =
-                    join!(get_results(page), get_results(page + 1));
-
-                let parsed_next_results = next_results?;
-
+                let current_results = get_results(page).await;
                 results = Arc::new(current_results?);
-
-                let (cache_keys, results_list) = (
-                    [results.1.clone(), parsed_next_results.1.clone()],
-                    [results.0.clone(), parsed_next_results.0],
-                );
-
-                tokio::spawn(async move { cache.cache_results(&results_list, &cache_keys).await });
+                cached_results = [(results.1.clone(), results.0.clone())]
+                    .iter()
+                    .cloned()
+                    .collect();
             }
+
+            let config_clone = config.clone();
+            let query_clone = query.clone();
+            tokio::spawn(async move {
+                _ = background_page_fetch(
+                    &config_clone,
+                    &cache,
+                    &query_clone,
+                    next_page,
+                    &search_settings,
+                    cached_results,
+                )
+                .await;
+            });
 
             let search_duration = search_start_time.elapsed().as_secs_f32();
 
@@ -243,6 +239,46 @@ async fn results(
             Ok((results, cache_key))
         }
     }
+}
+
+/// Asynchronously fetches search results for a specific page and updates the search cache.
+///
+/// This function is intended to be used in a background task to fetch search results for a given
+/// page asynchronously and update the search cache with the results.
+///
+/// # Parameters
+///
+/// - `config`: A reference to the application configuration (`Config`) that specifies settings
+///   and parameters for the search.
+/// - `cache`: A reference to the shared cache (`SharedCache`) where search results will be stored.
+/// - `query`: The search query string.
+/// - `page`: The page number of the search results to fetch.
+/// - `search_settings`: A reference to server-side settings (`Cookie`) used for the search.
+/// - `cache_keys`: A mutable vector (`Vec<String>`) containing cache keys associated with the
+///   search results.
+/// - `results_list`: A mutable vector (`Vec<SearchResults>`) containing the list of search results
+///   to be updated and stored in the cache.
+///
+async fn background_page_fetch(
+    config: &'static Config,
+    cache: &'static SharedCache,
+    query: &str,
+    page: u32,
+    search_settings: &server_models::Cookie<'_>,
+    cached_results: HashMap<String, SearchResults>,
+) {
+    if !config.aggregator.random_delay && page == 1 {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+    let results = results(config, cache, query, page, search_settings)
+        .await
+        .unwrap();
+    let mut cache_keys: Vec<String> = cached_results.keys().cloned().collect();
+    let mut results_list: Vec<SearchResults> = cached_results.values().cloned().collect();
+    cache_keys.push(results.1);
+    results_list.push(results.0);
+
+    _ = cache.cache_results(&results_list, &cache_keys).await;
 }
 
 /// A helper function which checks whether the search query contains any keywords which should be
