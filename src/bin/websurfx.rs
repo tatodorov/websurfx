@@ -6,7 +6,10 @@
 use mimalloc::MiMalloc;
 
 use std::{net::TcpListener, sync::OnceLock};
-use websurfx::{cache::cacher::create_cache, config::parser::Config, run};
+use websurfx::{
+    cache::cacher::create_cache, config::parser::Config, results::user_agent::random_user_agent,
+    run,
+};
 
 /// A dhat heap memory profiler
 #[cfg(feature = "dhat-heap")]
@@ -36,6 +39,11 @@ async fn main() -> std::io::Result<()> {
     let config = CONFIG.get_or_init(|| Config::parse(false).unwrap());
 
     let cache = create_cache(config).await;
+
+    // Load the user agents.
+    tokio::spawn(async move {
+        _ = random_user_agent();
+    });
 
     log::info!(
         "started server on port {} and IP {}",
