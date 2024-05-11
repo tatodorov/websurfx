@@ -16,6 +16,9 @@ use error_stack::{Report, Result, ResultExt};
 
 use super::search_result_parser::SearchResultParser;
 
+/// Base URL for the upstream search engine
+const BASE_URL: &str = "https://html.duckduckgo.com";
+
 /// A new DuckDuckGo engine type defined in-order to implement the `SearchEngine` trait which allows to
 /// reduce code duplication as well as allows to create vector of different search engines easily.
 pub struct DuckDuckGo {
@@ -53,11 +56,11 @@ impl SearchEngine for DuckDuckGo {
         // so that upstream server recieves valid page number.
         let url: String = match page {
             0 => {
-                format!("https://html.duckduckgo.com/html/?q={query}&s=&dc=&v=1&o=json&api=/d.js")
+                format!("{BASE_URL}/html/?q={query}&s=&dc=&v=1&o=json&api=/d.js")
             }
             _ => {
                 format!(
-                    "https://duckduckgo.com/html/?q={query}&s={}&dc={}&v=1&o=json&api=/d.js",
+                    "{BASE_URL}/html/?q={query}&s={}&dc={}&v=1&o=json&api=/d.js",
                     page * 30,
                     page * 30 + 1
                 )
@@ -68,12 +71,13 @@ impl SearchEngine for DuckDuckGo {
         let header_map = HeaderMap::try_from(&HashMap::from([
             ("User-Agent".to_string(), user_agent.to_string()),
             ("Accept-Language".to_string(), accept_language.to_string()),
-            ("Referer".to_string(), "https://google.com/".to_string()),
+            ("Referer".to_string(), format!("{}/", BASE_URL)),
+            ("Origin".to_string(), BASE_URL.to_string()),
             (
                 "Content-Type".to_string(),
                 "application/x-www-form-urlencoded".to_string(),
             ),
-            ("Cookie".to_string(), "kl=wt-wt".to_string()),
+            ("Sec-GPC".to_string(), "1".to_string()),
         ]))
         .change_context(EngineError::UnexpectedError)?;
 
