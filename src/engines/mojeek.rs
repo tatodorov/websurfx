@@ -16,6 +16,9 @@ use error_stack::{Report, Result, ResultExt};
 
 use super::search_result_parser::SearchResultParser;
 
+/// Base URL for the upstream search engine
+const BASE_URL: &str = "https://www.mojeek.com";
+
 /// A new Mojeek engine type defined in-order to implement the `SearchEngine` trait which allows to
 /// reduce code duplication as well as allows to create vector of different search engines easily.
 pub struct Mojeek {
@@ -115,29 +118,22 @@ impl SearchEngine for Mojeek {
 
         let url: String = match page {
             0 => {
-                format!("https://www.mojeek.com/search?q={query}{query_params_string}")
+                format!("{BASE_URL}/search?q={query}{query_params_string}")
             }
             _ => {
-                format!(
-                    "https://www.mojeek.com/search?q={query}&s={start_result}{query_params_string}"
-                )
+                format!("{BASE_URL}/search?q={query}&s={start_result}{query_params_string}")
             }
         };
-
-        let mut cookie_string = String::new();
-        for (k, v) in &query_params {
-            cookie_string.push_str(&format!("{k}={v}; "));
-        }
 
         let header_map = HeaderMap::try_from(&HashMap::from([
             ("User-Agent".to_string(), user_agent.to_string()),
             ("Accept-Language".to_string(), accept_language.to_string()),
-            ("Referer".to_string(), "https://google.com/".to_string()),
+            ("Referer".to_string(), format!("{}/", BASE_URL)),
             (
                 "Content-Type".to_string(),
                 "application/x-www-form-urlencoded".to_string(),
             ),
-            ("Cookie".to_string(), cookie_string),
+            ("Sec-GPC".to_string(), "1".to_string()),
         ]))
         .change_context(EngineError::UnexpectedError)?;
 
