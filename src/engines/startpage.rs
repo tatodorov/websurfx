@@ -54,12 +54,40 @@ impl SearchEngine for Startpage {
     ) -> Result<Vec<(String, SearchResult)>, EngineError> {
         // Page number can be missing or empty string and so appropriate handling is required
         // so that upstream server recieves valid page number.
-        let url: String = format!("{BASE_URL}/sp/search?q={query}&num=20&start={}", page * 20,);
+        let url: String = match page {
+            0 => format!("{BASE_URL}/sp/search?query={query}&abp=1&t=device&lui=english&cat=web"),
+            _ => format!("{BASE_URL}/sp/search?lui=english&language=english&query={query}&cat=web&t=device&segment=startpage.udog&page={}", page+1),
+        };
 
         let safe_search_level = match safe_search {
             0 => "1",
             _ => "0",
         };
+
+        // Constructing the Cookie.
+        let settings: Vec<(&str, &str)> = vec![
+            ("date_time", "world"),
+            ("disable_family_filter", safe_search_level),
+            ("disable_open_in_new_window", "1"),
+            ("enable_post_method", "0"),
+            ("enable_proxy_safety_suggest", "0"),
+            ("enable_stay_control", "0"),
+            ("instant_answers", "0"),
+            ("lang_homepage", "s%2Fdevice%2Fen"),
+            ("language", "english"),
+            ("language_ui", "english"),
+            ("num_of_results", "20"),
+            ("search_results_region", "all"),
+            ("suggestions", "0"),
+            ("wt_unit", "celsius"),
+        ];
+
+        let joined_pairs: Vec<String> = settings
+            .iter()
+            .map(|&(key, value)| format!("{}EEE{}", key, value))
+            .collect();
+
+        let cookie = format!("preferences={}", joined_pairs.join("N1N"));
 
         // initializing HeaderMap and adding appropriate headers.
         let header_map = HeaderMap::try_from(&HashMap::from([
@@ -67,12 +95,8 @@ impl SearchEngine for Startpage {
             ("Accept-Language".to_string(), accept_language.to_string()),
             ("Referer".to_string(), format!("{}/", BASE_URL)),
             ("Origin".to_string(), BASE_URL.to_string()),
-            (
-                "Content-Type".to_string(),
-                "application/x-www-form-urlencoded".to_string(),
-            ),
             ("Sec-GPC".to_string(), "1".to_string()),
-            ("Cookie".to_string(), format!("preferences=date_timeEEEworldN1Ndisable_family_filterEEE{safe_search_level}N1Ndisable_open_in_new_windowEEE1N1Nenable_post_methodEEE0N1Nenable_proxy_safety_suggestEEE0N1Nenable_stay_controlEEE0N1Ninstant_answersEEE0N1Nlang_homepageEEEs%2Fdevice%2FenN1NlanguageEEEenglishN1Nlanguage_uiEEEenglishN1Nnum_of_resultsEEE20N1Nsearch_results_regionEEEallN1NsuggestionsEEE0N1Nwt_unitEEEcelsius")),
+            ("Cookie".to_string(), cookie),
         ]))
         .change_context(EngineError::UnexpectedError)?;
 
