@@ -147,6 +147,7 @@ pub trait SearchEngine: Sync + Send {
         user_agent: &str,
         client: &Client,
         safe_search: u8,
+        accept_language: &str,
     ) -> Result<Vec<(String, SearchResult)>, EngineError>;
 }
 

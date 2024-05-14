@@ -47,6 +47,7 @@ impl SearchEngine for Mojeek {
         user_agent: &str,
         client: &Client,
         safe_search: u8,
+        accept_language: &str,
     ) -> Result<Vec<(String, SearchResult)>, EngineError> {
         // Mojeek uses `start results from this number` convention
         // So, for 10 results per page, page 0 starts at 1, page 1
@@ -130,6 +131,7 @@ impl SearchEngine for Mojeek {
 
         let header_map = HeaderMap::try_from(&HashMap::from([
             ("User-Agent".to_string(), user_agent.to_string()),
+            ("Accept-Language".to_string(), accept_language.to_string()),
             ("Referer".to_string(), "https://google.com/".to_string()),
             (
                 "Content-Type".to_string(),

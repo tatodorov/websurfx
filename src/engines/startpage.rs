@@ -47,6 +47,7 @@ impl SearchEngine for Startpage {
         user_agent: &str,
         client: &Client,
         _safe_search: u8,
+        accept_language: &str,
     ) -> Result<Vec<(String, SearchResult)>, EngineError> {
         // Page number can be missing or empty string and so appropriate handling is required
         // so that upstream server recieves valid page number.
@@ -58,6 +59,7 @@ impl SearchEngine for Startpage {
         // initializing HeaderMap and adding appropriate headers.
         let header_map = HeaderMap::try_from(&HashMap::from([
             ("User-Agent".to_string(), user_agent.to_string()),
+            ("Accept-Language".to_string(), accept_language.to_string()),
             ("Referer".to_string(), "https://google.com/".to_string()),
             (
                 "Content-Type".to_string(),

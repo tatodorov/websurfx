@@ -44,6 +44,12 @@ pub async fn search(
 ) -> Result<HttpResponse, Box<dyn std::error::Error>> {
     let search_start_time = Instant::now();
     use std::sync::Arc;
+
+    let accept_language = match req.headers().get("Accept-Language") {
+        Some(result) => result.to_str().unwrap_or("en-US,en;q=0.9").to_string(),
+        None => "en-US,en;q=0.9".to_string(),
+    };
+
     let params = web::Query::<SearchParams>::from_query(req.query_string())?;
     match &params.q {
         Some(query) => {
@@ -79,7 +85,16 @@ pub async fn search(
             );
 
             // Closure wrapping the results function capturing local references
-            let get_results = |page| results(&config, &cache, query, page, &search_settings);
+            let get_results = |page| {
+                results(
+                    &config,
+                    &cache,
+                    query,
+                    page,
+                    &search_settings,
+                    &accept_language,
+                )
+            };
 
             // .max(0) makes sure that the page >= 0.
             let page = params.page.unwrap_or(0).max(0);
@@ -111,6 +126,7 @@ pub async fn search(
 
             let config_clone = config.clone();
             let query_clone = query.clone();
+            // let accept_language_clone = accept_language.clone();
             tokio::spawn(async move {
                 _ = background_page_fetch(
                     &config_clone,
@@ -119,6 +135,7 @@ pub async fn search(
                     next_page,
                     &search_settings,
                     cached_results,
+                    &accept_language,
                 )
                 .await;
             });
@@ -164,18 +181,20 @@ async fn results(
     query: &str,
     page: u32,
     search_settings: &server_models::Cookie<'_>,
+    accept_language: &str,
 ) -> Result<(SearchResults, String), Box<dyn std::error::Error>> {
     // eagerly parse cookie value to evaluate safe search level
     let safe_search_level = search_settings.safe_search_level;
 
     let cache_key = format!(
-        "http://{}:{}/search?q={}&page={}&safesearch={}&engines={}",
+        "http://{}:{}/search?q={}&page={}&safesearch={}&engines={}&accept_language={}",
         config.binding_ip,
         config.port,
         query,
         page,
         safe_search_level,
-        search_settings.engines.join(",")
+        search_settings.engines.join(","),
+        accept_language,
     );
 
     // fetch the cached results json.
@@ -217,6 +236,7 @@ async fn results(
                             .filter_map(|engine| EngineHandler::new(engine).ok())
                             .collect::<Vec<EngineHandler>>(),
                         safe_search_level,
+                        accept_language,
                     )
                     .await?
                 }
@@ -266,11 +286,12 @@ async fn background_page_fetch(
     page: u32,
     search_settings: &server_models::Cookie<'_>,
     cached_results: HashMap<String, SearchResults>,
+    accept_language: &str,
 ) {
     if !config.aggregator.random_delay && page == 1 {
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
-    let results = results(config, cache, query, page, search_settings)
+    let results = results(config, cache, query, page, search_settings, accept_language)
         .await
         .unwrap();
     let mut cache_keys: Vec<String> = cached_results.keys().cloned().collect();

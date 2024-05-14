@@ -44,6 +44,7 @@ impl SearchEngine for Brave {
         user_agent: &str,
         client: &Client,
         safe_search: u8,
+        accept_language: &str,
     ) -> Result<Vec<(String, SearchResult)>, EngineError> {
         let url = format!("https://search.brave.com/search?q={query}&offset={page}");
 
@@ -55,6 +56,7 @@ impl SearchEngine for Brave {
 
         let header_map = HeaderMap::try_from(&HashMap::from([
             ("User-Agent".to_string(), user_agent.to_string()),
+            ("Accept-Language".to_string(), accept_language.to_string()),
             (
                 "Content-Type".to_string(),
                 "application/x-www-form-urlencoded".to_string(),

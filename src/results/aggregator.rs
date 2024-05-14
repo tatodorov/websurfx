@@ -74,6 +74,7 @@ pub async fn aggregate(
     config: &Config,
     upstream_search_engines: &[EngineHandler],
     safe_search: u8,
+    accept_language: &str,
 ) -> Result<SearchResults, Box<dyn std::error::Error>> {
     let client = CLIENT.get_or_init(|| {
         ClientBuilder::new()
@@ -106,10 +107,12 @@ pub async fn aggregate(
     let tasks: FutureVec = FutureVec::new();
 
     let query: Arc<String> = Arc::new(query.to_string());
+    let accept_language: Arc<String> = Arc::new(accept_language.to_string());
     for engine_handler in upstream_search_engines {
         let (name, search_engine) = engine_handler.clone().into_name_engine();
         names.push(name);
         let query_partially_cloned = query.clone();
+        let accept_language_cloned = accept_language.clone();
         tasks.push(tokio::spawn(async move {
             search_engine
                 .results(
@@ -118,6 +121,7 @@ pub async fn aggregate(
                     user_agent,
                     client,
                     safe_search,
+                    &accept_language_cloned,
                 )
                 .await
         }));
