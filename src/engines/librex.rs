@@ -14,6 +14,9 @@ use error_stack::{Report, Result, ResultExt};
 
 use super::search_result_parser::SearchResultParser;
 
+/// Base URL for the upstream search engine
+const BASE_URL: &str = "https://search.ahwx.org";
+
 /// Represents the LibreX search engine.
 pub struct LibreX {
     /// The parser used to extract search results from HTML documents.
@@ -30,10 +33,10 @@ impl LibreX {
         Ok(Self {
             parser: SearchResultParser::new(
                 ".text-result-container>p",
-                ".text-result-container",
-                ".text-result-wrapper>a>h2",
-                ".text-result-wrapper>a",
-                ".text-result-wrapper>span",
+                ".text-result-container>.text-result-wrapper",
+                "a>h2",
+                "a",
+                "span",
             )?,
         })
     }
@@ -61,26 +64,48 @@ impl SearchEngine for LibreX {
         page: u32,
         user_agent: &str,
         client: &Client,
-        _safe_search: u8,
+        safe_search: u8,
         accept_language: &str,
     ) -> Result<Vec<(String, SearchResult)>, EngineError> {
         // Page number can be missing or empty string and so appropriate handling is required
         // so that upstream server recieves valid page number.
-        let url: String = format!(
-            "https://search.ahwx.org/search.php?q={query}&p={}&t=10",
-            page * 10
-        );
+        let url: String = format!("{BASE_URL}/search.php?q={query}&p={}&t=10", page * 10);
+
+        let safe_search_level = match safe_search {
+            0 => "off",
+            _ => "on",
+        };
+
+        // Constructing the Cookie.
+        let settings: Vec<(&str, &str)> = vec![
+            ("theme", "amoled"),
+            ("disable_special", "on"),
+            ("disable_frontends", "on"),
+            ("language", "en"),
+            ("number_of_results", "20"),
+            ("safe_search", safe_search_level),
+            ("save", "1"),
+        ];
+
+        let joined_pairs: Vec<String> = settings
+            .iter()
+            .map(|&(key, value)| format!("{}={}", key, value))
+            .collect();
+
+        let cookie = format!("preferences={}", joined_pairs.join(", "));
 
         // initializing HeaderMap and adding appropriate headers.
         let header_map = HeaderMap::try_from(&HashMap::from([
             ("User-Agent".to_string(), user_agent.to_string()),
             ("Accept-Language".to_string(), accept_language.to_string()),
-            ("Referer".to_string(), "https://google.com/".to_string()),
-            ("Content-Type".to_string(), "application/x-www-form-urlencoded".to_string()),
+            ("Referer".to_string(), format!("{}/", BASE_URL)),
+            ("Origin".to_string(), BASE_URL.to_string()),
             (
-                "Cookie".to_string(),
-                "theme=amoled; disable_special=on; disable_frontends=on; language=en; number_of_results=10; safe_search=on; save=1".to_string(),
+                "Content-Type".to_string(),
+                "application/x-www-form-urlencoded".to_string(),
             ),
+            ("Sec-GPC".to_string(), "1".to_string()),
+            ("Cookie".to_string(), cookie),
         ]))
         .change_context(EngineError::UnexpectedError)?;
 
@@ -95,12 +120,14 @@ impl SearchEngine for LibreX {
         // scrape all the results from the html
         self.parser
             .parse_for_results(&document, |title, url, desc| {
-                Some(SearchResult::new(
-                    title.inner_html().trim(),
-                    url.inner_html().trim(),
-                    desc.inner_html().trim(),
-                    &["librex"],
-                ))
+                url.value().attr("href").map(|url| {
+                    SearchResult::new(
+                        title.inner_html().trim(),
+                        url,
+                        desc.inner_html().trim(),
+                        &["librex"],
+                    )
+                })
             })
     }
 }
