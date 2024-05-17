@@ -17,6 +17,9 @@ use error_stack::{Report, Result, ResultExt};
 
 use super::search_result_parser::SearchResultParser;
 
+/// Base URL for the upstream search engine
+const BASE_URL: &str = "https://www.bing.com";
+
 /// A new Bing engine type defined in-order to implement the `SearchEngine` trait which allows to
 /// reduce code duplication as well as allows to create vector of different search engines easily.
 pub struct Bing {
@@ -29,11 +32,11 @@ impl Bing {
     pub fn new() -> Result<Self, EngineError> {
         Ok(Self {
             parser: SearchResultParser::new(
-                ".b_results",
-                ".b_algo",
-                "h2 a",
-                ".tpcn a.tilk",
-                ".b_caption p",
+                "#b_results",
+                "li.b_algo",
+                "h2 > a",
+                "div > a",
+                "div > p",
             )?,
         })
     }
@@ -58,20 +61,29 @@ impl SearchEngine for Bing {
 
         let url: String = match page {
             0 => {
-                format!("https://www.bing.com/search?q={query}")
+                format!("{BASE_URL}/search?q={query}&pq={query}")
+            }
+            1 => {
+                format!("{BASE_URL}/search?q={query}&pq={query}&first={start_result}&FORM=PERE")
             }
             _ => {
-                format!("https://www.bing.com/search?q={query}&first={start_result}")
+                format!(
+                    "{BASE_URL}/search?q={query}&pq={query}&first={start_result}&FORM=PERE{}",
+                    page - 1
+                )
             }
         };
 
         let query_params: Vec<(&str, &str)> = vec![
+            ("_C_ETH", "1"),
             ("_EDGE_V", "1"),
-            ("SRCHD=AF", "NOFORM"),
-            ("_Rwho=u", "d"),
+            ("_Rwho", "u=d"),
             ("bngps=s", "0"),
-            ("_UR=QS=0&TQS", "0"),
-            ("_UR=QS=0&TQS", "0"),
+            ("_UR", "QS=4"),
+            ("ANIMIA", "FRE=1"),
+            ("BCP", "AD=0&AL=0&SM=0"),
+            ("bngps", "s=0"),
+            ("SRCHD", "AF=NOFORM"),
         ];
 
         let mut cookie_string = String::new();
@@ -82,11 +94,8 @@ impl SearchEngine for Bing {
         let header_map = HeaderMap::try_from(&HashMap::from([
             ("User-Agent".to_string(), user_agent.to_string()),
             ("Accept-Language".to_string(), accept_language.to_string()),
-            ("Referer".to_string(), "https://google.com/".to_string()),
-            (
-                "Content-Type".to_string(),
-                "application/x-www-form-urlencoded".to_string(),
-            ),
+            ("Referer".to_string(), format!("{}/", BASE_URL)),
+            ("Origin".to_string(), BASE_URL.to_string()),
             ("Cookie".to_string(), cookie_string),
         ]))
         .change_context(EngineError::UnexpectedError)?;
@@ -110,17 +119,52 @@ impl SearchEngine for Bing {
         }
 
         let re_span = Regex::new(r#"<span.*?>.*?(?:</span>&nbsp;·|</span>)"#).unwrap();
-        let re_strong = Regex::new(r#"(<strong>|</strong>)"#).unwrap();
 
         // scrape all the results from the html
         self.parser
             .parse_for_results(&document, |title, url, desc| {
-                Some(SearchResult::new(
-                    &re_strong.replace_all(title.inner_html().trim(), ""),
-                    url.value().attr("href").unwrap(),
-                    &re_span.replace_all(desc.inner_html().trim(), ""),
-                    &["bing"],
-                ))
+                url.value().attr("href").map(|url| {
+                    let obfuscated_url = url.starts_with("https://www.bing.com/ck/a?");
+                    let url_decoded = if obfuscated_url {
+                        decode_url(url)
+                    } else {
+                        url.to_string()
+                    };
+                    SearchResult::new(
+                        title.inner_html().trim(),
+                        url_decoded.as_str(),
+                        &re_span.replace_all(desc.inner_html().trim(), ""),
+                        &["bing"],
+                    )
+                })
             })
     }
+}
+/// Converts an obfuscated URL to a regilat one
+fn decode_url(url: &str) -> String {
+    use base64::Engine;
+    let re = match Regex::new(r"&u=a1([^&]+)") {
+        Ok(result) => result,
+        Err(_) => {
+            return url.to_string();
+        }
+    };
+    if let Some(substr) = re.captures(url) {
+        if let Some(matched) = substr.get(1) {
+            let url_base64 = matched.as_str().to_string();
+            let bytes = match base64::engine::general_purpose::STANDARD_NO_PAD.decode(url_base64) {
+                Ok(b) => b,
+                Err(_) => {
+                    return url.to_string();
+                }
+            };
+
+            return if let Ok(str) = String::from_utf8(bytes) {
+                str
+            } else {
+                return url.to_string();
+            };
+        }
+    }
+    url.to_string()
 }
